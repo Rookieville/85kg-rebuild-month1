@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatPace, habitAdherence, monthTier, paceMinutesPerKm, rollingAverage, weeklyTier } from "./calculations";
+import { durationPartsToMinutes, formatDuration, formatPace, habitAdherence, minutesToDurationParts, monthTier, paceMinutesPerKm, parsePace, rollingAverage, weeklyTier } from "./calculations";
 import { monthDay, weekNumber } from "./dates";
 import type { DailyHabit, WeightEntry } from "../types";
 
@@ -16,8 +16,19 @@ describe("date and adherence calculations", () => {
   it("calculates pace and tiers", () => {
     expect(paceMinutesPerKm(5, 50)).toBe(10);
     expect(formatPace(10.5)).toBe("10:30/km");
+    expect(formatPace(11.05)).toBe("11:03/km");
+    expect(parsePace("11:03/km")).toBe(11.05);
+    expect(parsePace("10:30")).toBe(10.5);
+    expect(parsePace("10:77/km")).toBeUndefined();
     expect(weeklyTier(3, 5).tier).toBe("Stretch");
     expect(monthTier(12, 20, 4, 80)).toBe("Stretch");
+  });
+
+  it("converts walk duration between h/m/s and decimal minutes", () => {
+    expect(durationPartsToMinutes(0, 43, 40)).toBeCloseTo(43.6667, 4);
+    expect(minutesToDurationParts(43 + 40 / 60)).toEqual({ hours: 0, minutes: 43, seconds: 40 });
+    expect(formatDuration(43 + 40 / 60)).toBe("43m 40s");
+    expect(formatDuration(63 + 12 / 60)).toBe("1h 03m 12s");
   });
 
   it("calculates rolling average only when enough readings exist", () => {

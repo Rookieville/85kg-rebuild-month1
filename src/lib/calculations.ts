@@ -12,9 +12,41 @@ export function speedKmPerHour(distanceKm: number, durationMinutes: number) {
 
 export function formatPace(minutesPerKm: number) {
   if (!Number.isFinite(minutesPerKm) || minutesPerKm <= 0) return "-";
-  const mins = Math.floor(minutesPerKm);
-  const secs = Math.round((minutesPerKm - mins) * 60).toString().padStart(2, "0");
+  const totalSeconds = Math.round(minutesPerKm * 60);
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = (totalSeconds % 60).toString().padStart(2, "0");
   return `${mins}:${secs}/km`;
+}
+
+export function parsePace(value: string) {
+  const match = value.trim().toLowerCase().replace("/km", "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return undefined;
+  const minutes = Number(match[1]);
+  const seconds = Number(match[2]);
+  if (!Number.isFinite(minutes) || !Number.isFinite(seconds) || seconds > 59) return undefined;
+  return minutes + seconds / 60;
+}
+
+export function durationPartsToMinutes(hours: number, minutes: number, seconds: number) {
+  const safeHours = Math.max(0, Number.isFinite(hours) ? hours : 0);
+  const safeMinutes = Math.max(0, Number.isFinite(minutes) ? minutes : 0);
+  const safeSeconds = Math.max(0, Number.isFinite(seconds) ? seconds : 0);
+  return safeHours * 60 + safeMinutes + safeSeconds / 60;
+}
+
+export function minutesToDurationParts(durationMinutes: number) {
+  const totalSeconds = Math.max(0, Math.round(durationMinutes * 60));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return { hours, minutes, seconds };
+}
+
+export function formatDuration(durationMinutes: number) {
+  const { hours, minutes, seconds } = minutesToDurationParts(durationMinutes);
+  if (hours > 0) return `${hours}h ${minutes.toString().padStart(2, "0")}m ${seconds.toString().padStart(2, "0")}s`;
+  if (seconds > 0) return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+  return `${minutes}m`;
 }
 
 export function weeklyTier(strengthCompleted: number, walkCount: number) {
@@ -85,6 +117,7 @@ export function monthSummary(sessions: WorkoutSession[], walks: Walk[], weights:
   const distance = monthWalks.reduce((sum, walk) => sum + walk.distanceKm, 0);
   const duration = monthWalks.reduce((sum, walk) => sum + walk.durationMinutes, 0);
   const adherence = habitAdherence(habits);
+  const fastestSplits = monthWalks.map((walk) => walk.fastestSplit).filter((split): split is number => typeof split === "number");
   const bodyTrackedDays = new Set(weights.filter((entry) => inMonth(entry.date)).map((entry) => entry.date)).size;
   const reviewCount = reviews.filter((review) => review.week >= 1 && review.week <= 4).length;
   const score = Math.round(
@@ -101,7 +134,8 @@ export function monthSummary(sessions: WorkoutSession[], walks: Walk[], weights:
     distance,
     duration,
     averagePace: paceMinutesPerKm(distance, duration),
-    bestPace: monthWalks.length ? Math.min(...monthWalks.map((walk) => paceMinutesPerKm(walk.distanceKm, walk.durationMinutes))) : 0,
+    bestPace: monthWalks.length ? Math.min(...monthWalks.map((walk) => walk.averagePace ?? paceMinutesPerKm(walk.distanceKm, walk.durationMinutes))) : 0,
+    fastestSplit: fastestSplits.length ? Math.min(...fastestSplits) : 0,
     longestWalk: monthWalks.length ? Math.max(...monthWalks.map((walk) => walk.distanceKm)) : 0,
     startingWeight: [...weights].sort((a, b) => a.date.localeCompare(b.date)).at(0)?.weightKg,
     latestWeight: [...weights].sort((a, b) => a.date.localeCompare(b.date)).at(-1)?.weightKg,

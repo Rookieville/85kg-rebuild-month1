@@ -83,6 +83,7 @@ export interface Walk extends MutableRecord {
   time: string;
   distanceKm: number;
   durationMinutes: number;
+  averagePace?: number;
   fastestSplit?: number;
   route: string;
   dayPart: string;
