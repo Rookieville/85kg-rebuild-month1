@@ -30,4 +30,11 @@ describe("App", () => {
     expect(screen.getByText("Edit program")).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Workout editor" })).not.toBeInTheDocument();
   });
+
+  it("opens the achievements page from the bottom navigation", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByText("Badges"));
+    expect(await screen.findByText("Achievements")).toBeInTheDocument();
+    expect(await screen.findByText("First Step")).toBeInTheDocument();
+  });
 });

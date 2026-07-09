@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added a weight trend chart with raw bodyweight and seven-day rolling average on the Body page.
+- Added a dedicated Achievements page and bottom-nav badge access.
+- Added large achievement unlock popups with sound and confetti so new badges are noticeable.
 - Reworked the Strength page so active workouts, the schedule, and completed workout history are prominent, with program editing moved into an explicit modal.
 - Added clearer workout completion and readiness save feedback, plus active workout recovery to reduce the feeling of lost progress after navigation.
 - Added collapsible completed exercise groups, sticky timer placement, rest timer beep/vibration, and inline RIR explanation.

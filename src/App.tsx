@@ -1,7 +1,7 @@
 import confetti from "canvas-confetti";
 import { useLiveQuery } from "dexie-react-hooks";
 import { addSeconds, differenceInSeconds, format } from "date-fns";
-import { CalendarDays, Check, DatabaseBackup, Dumbbell, Footprints, Home, Moon, Pencil, Plus, RotateCcw, Save, Scale, TimerReset, Trash2, Trophy, Upload } from "lucide-react";
+import { Award, CalendarDays, Check, DatabaseBackup, Dumbbell, Footprints, Home, Moon, Pencil, Plus, RotateCcw, Save, Scale, TimerReset, Trash2, Trophy, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { HashRouter, Link, NavLink, Route, Routes, useNavigate, useParams } from "react-router-dom";
@@ -12,7 +12,7 @@ import { db, makeId, nowIso } from "./db/database";
 import { seedInitialData } from "./db/seed";
 import { eligibleAchievements, newAchievementIds } from "./lib/achievements";
 import { backupFilename, downloadText, exportBackup, importBackup, toCsv } from "./lib/backup";
-import { durationPartsToMinutes, formatDuration, formatPace, habitAdherence, minutesToDurationParts, monthSummary, paceMinutesPerKm, parsePace, speedKmPerHour, summarizeWeek } from "./lib/calculations";
+import { durationPartsToMinutes, formatDuration, formatPace, habitAdherence, minutesToDurationParts, monthSummary, paceMinutesPerKm, parsePace, rollingAverage, speedKmPerHour, summarizeWeek } from "./lib/calculations";
 import { ACHIEVEMENTS, HABITS, MONTH_END, MONTH_START } from "./lib/constants";
 import { dateRange, formatDisplayDate, monthDay, todayLocalDate, weekDates, weekNumber } from "./lib/dates";
 
@@ -51,6 +51,7 @@ function useData() {
 }
 
 const achievementName = (id: string) => ACHIEVEMENTS.find((item) => item[0] === id)?.[1] ?? id;
+const achievementDescription = (id: string) => ACHIEVEMENTS.find((item) => item[0] === id)?.[2] ?? "Achievement earned";
 const card = "rounded-3xl border border-white/10 bg-white/[0.06] p-4 shadow-xl shadow-black/20";
 const input = "w-full rounded-2xl border border-white/10 bg-slate-950/80 px-3 py-3 text-sm text-white outline-none ring-emerald-300/40 focus:ring-2";
 const button = "inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-emerald-400 px-4 py-2 text-sm font-bold text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-200 disabled:opacity-50 motion-reduce:transition-none";
@@ -91,10 +92,12 @@ function App() {
             <Route path="/walks" element={<Walks />} />
             <Route path="/body" element={<Body />} />
             <Route path="/habits" element={<Habits />} />
+            <Route path="/achievements" element={<Achievements />} />
             <Route path="/reviews" element={<Reviews />} />
             <Route path="/summaries" element={<Summaries />} />
             <Route path="/backup" element={<Backup />} />
           </Routes>
+          <AchievementCelebrations />
         </main>
         <BottomNav />
       </div>
@@ -107,13 +110,12 @@ function SkipLink() {
 }
 
 function BottomNav() {
-  const items = [["/", Home, "Home"], ["/strength", Dumbbell, "Lift"], ["/walks", Footprints, "Walk"], ["/body", Scale, "Body"], ["/habits", Check, "Habits"], ["/summaries", Trophy, "Stats"], ["/backup", DatabaseBackup, "Backup"]] as const;
-  return <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-slate-950/95 px-2 py-2 backdrop-blur"><div className="mx-auto grid max-w-3xl grid-cols-7 gap-1">{items.map(([to, Icon, label]) => <NavLink key={to} to={to} className={({ isActive }) => `flex min-h-14 flex-col items-center justify-center rounded-2xl text-[11px] ${isActive ? "bg-emerald-400 text-slate-950" : "text-slate-300"}`}><Icon size={19} /><span>{label}</span></NavLink>)}</div></nav>;
+  const items = [["/", Home, "Home"], ["/strength", Dumbbell, "Lift"], ["/walks", Footprints, "Walk"], ["/body", Scale, "Body"], ["/habits", Check, "Habits"], ["/achievements", Award, "Badges"], ["/summaries", Trophy, "Stats"], ["/backup", DatabaseBackup, "Backup"]] as const;
+  return <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-slate-950/95 px-2 py-2 backdrop-blur"><div className="mx-auto grid max-w-4xl grid-cols-8 gap-1">{items.map(([to, Icon, label]) => <NavLink key={to} to={to} className={({ isActive }) => `flex min-h-14 flex-col items-center justify-center rounded-2xl text-[10px] ${isActive ? "bg-emerald-400 text-slate-950" : "text-slate-300"}`}><Icon size={18} /><span>{label}</span></NavLink>)}</div></nav>;
 }
 
 function Dashboard() {
   const data = useData();
-  useAchievementSync(data);
   const today = todayLocalDate();
   const shownDate = today < MONTH_START || today > MONTH_END ? MONTH_START : today;
   const week = weekNumber(shownDate);
@@ -306,7 +308,13 @@ async function duplicateWalk(walk: Walk) { await db.walks.add({ ...walk, id: mak
 
 function Body() {
   const data = useData();
-  return <Page title="Body" subtitle="Morning bodyweight and weekly waist tracking without overreacting to one reading."><div className="grid gap-4 lg:grid-cols-2"><WeightForm /><WaistForm /></div><div className="mt-4 grid gap-4 sm:grid-cols-4"><Metric label="Starting weight" value={data.weights.at(0)?.weightKg ? `${data.weights.at(0)?.weightKg} kg` : "-"} /><Metric label="Latest weight" value={data.weights.at(-1)?.weightKg ? `${data.weights.at(-1)?.weightKg} kg` : "-"} /><Metric label="Starting waist" value={data.waists.at(0)?.waistCm ? `${data.waists.at(0)?.waistCm} cm` : "-"} /><Metric label="Latest waist" value={data.waists.at(-1)?.waistCm ? `${data.waists.at(-1)?.waistCm} cm` : "-"} /></div><RecordList records={[...data.weights, ...data.waists].sort((a, b) => a.date.localeCompare(b.date))} render={(record) => <><p className="font-bold">{record.date}</p><p className="text-sm text-slate-300">{"weightKg" in record ? `${record.weightKg} kg` : `${record.waistCm} cm`}</p><button className={ghost} onClick={() => confirm("Delete this record?") && ("weightKg" in record ? db.weightEntries.delete(record.id) : db.waistEntries.delete(record.id))}>Delete</button></>} /></Page>;
+  const sortedWeights = [...data.weights].sort((a, b) => a.date.localeCompare(b.date));
+  const averages = rollingAverage(sortedWeights);
+  const weightChart = sortedWeights.map((entry) => ({ date: entry.date.slice(5), weight: entry.weightKg, average: averages.find((item) => item.date === entry.date)?.average ? Number(averages.find((item) => item.date === entry.date)?.average?.toFixed(1)) : undefined }));
+  const firstWeight = sortedWeights.at(0)?.weightKg;
+  const latestWeight = sortedWeights.at(-1)?.weightKg;
+  const weightChange = firstWeight && latestWeight ? latestWeight - firstWeight : undefined;
+  return <Page title="Body" subtitle="Morning bodyweight and weekly waist tracking without overreacting to one reading."><div className="grid gap-4 lg:grid-cols-2"><WeightForm /><WaistForm /></div><div className="mt-4 grid gap-4 sm:grid-cols-4"><Metric label="Starting weight" value={firstWeight ? `${firstWeight} kg` : "-"} /><Metric label="Latest weight" value={latestWeight ? `${latestWeight} kg` : "-"} /><Metric label="Starting waist" value={data.waists.at(0)?.waistCm ? `${data.waists.at(0)?.waistCm} cm` : "-"} /><Metric label="Latest waist" value={data.waists.at(-1)?.waistCm ? `${data.waists.at(-1)?.waistCm} cm` : "-"} /></div><section className={`${card} mt-4`}><h2 className="text-xl font-bold">Weight trend</h2><p className="mt-1 text-sm text-slate-300">{sortedWeights.length ? `${sortedWeights.length} weight entries. ${weightChange !== undefined ? `Change since first entry: ${weightChange > 0 ? "+" : ""}${weightChange.toFixed(1)} kg.` : ""} Seven-day average appears after 7 entries.` : "Log weight entries to see your trend."}</p><div className="mt-3 h-64" aria-hidden="true">{weightChart.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={weightChart}><CartesianGrid stroke="#334155" strokeDasharray="3 3" /><XAxis dataKey="date" stroke="#cbd5e1" /><YAxis stroke="#cbd5e1" domain={["dataMin - 2", "dataMax + 2"]} /><Tooltip contentStyle={{ background: "#020617", border: "1px solid #334155", borderRadius: "12px" }} /><Line type="monotone" dataKey="weight" name="Weight kg" stroke="#22d3ee" strokeWidth={3} dot /><Line type="monotone" dataKey="average" name="7-day average" stroke="#a78bfa" strokeWidth={3} dot={false} connectNulls /></LineChart></ResponsiveContainer> : <div className="flex h-full items-center justify-center rounded-2xl bg-white/5 text-sm text-slate-400">No weight data yet</div>}</div></section><RecordList records={[...data.weights, ...data.waists].sort((a, b) => a.date.localeCompare(b.date))} render={(record) => <><p className="font-bold">{record.date}</p><p className="text-sm text-slate-300">{"weightKg" in record ? `${record.weightKg} kg` : `${record.waistCm} cm`}</p><button className={ghost} onClick={() => confirm("Delete this record?") && ("weightKg" in record ? db.weightEntries.delete(record.id) : db.waistEntries.delete(record.id))}>Delete</button></>} /></Page>;
 }
 
 function WeightForm() { const [form, setForm] = useState({ date: todayLocalDate(), time: "06:30", weightKg: 110, morning: true, notes: "" }); async function save() { await db.weightEntries.add({ id: makeId("weight"), ...form, createdAt: nowIso(), updatedAt: nowIso() }); } return <section className={card}><h2 className="text-xl font-bold">Log weight</h2><div className="mt-3 grid gap-2"><FormInput label="Date" type="date" value={form.date} set={(value) => setForm({ ...form, date: value })} /><FormInput label="Time" type="time" value={form.time} set={(value) => setForm({ ...form, time: value })} /><FormInput label="Weight kg" type="number" value={form.weightKg} set={(value) => setForm({ ...form, weightKg: Number(value) })} /><label className="flex gap-2"><input type="checkbox" checked={form.morning} onChange={(event) => setForm({ ...form, morning: event.target.checked })} /> Morning measurement</label><textarea className={input} value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></div><button className={`${button} mt-3`} onClick={save}>Save weight</button></section>; }
@@ -351,6 +359,12 @@ function ReviewForm({ week, data }: { week: number; data: AppData }) { const sum
 
 function Summaries() { const data = useData(); const month = monthSummary(data.sessions, data.walks, data.weights, data.waists, data.habits, data.reviews); const chartData = [1, 2, 3, 4].map((week) => { const summary = summarizeWeek(week, data.sessions, data.walks, data.weights, data.waists, data.habits, data.reviews); return { week: `W${week}`, distance: Number(summary.distance.toFixed(1)), walks: summary.walks }; }); return <Page title="Summaries" subtitle="Daily, weekly, and Month 1 summaries recalculate after edits and deletes."><div className="grid gap-4 sm:grid-cols-3"><Metric label="Month tier" value={month.tier} /><Metric label="Strength" value={`${month.completedStrength}/12`} /><Metric label="Walks" value={String(month.walkCount)} /></div><section className={`${card} mt-4`}><h2 className="text-xl font-bold">Month 1 report</h2><p className="mt-2 text-sm text-slate-300">Total distance {month.distance.toFixed(1)} km · walking time {formatDuration(month.duration)} · average pace {formatPace(month.averagePace)} · best average pace {formatPace(month.bestPace)} · fastest split {formatPace(month.fastestSplit)} · longest walk {month.longestWalk.toFixed(1)} km.</p><p className="mt-2 text-sm text-slate-300">Weight {month.startingWeight ?? "-"} to {month.latestWeight ?? "-"} kg. Waist {month.startingWaist ?? "-"} to {month.latestWaist ?? "-"} cm. Nutrition adherence {Math.round(month.habitAdherence)}%.</p><p className="mt-4 text-sm text-slate-300">Walking distance chart by week: {chartData.map((item) => `${item.week} ${item.distance} km`).join(", ")}.</p><div className="mt-3 h-56" aria-hidden="true"><ResponsiveContainer width="100%" height="100%"><LineChart data={chartData}><CartesianGrid stroke="#334155" strokeDasharray="3 3" /><XAxis dataKey="week" stroke="#cbd5e1" /><YAxis stroke="#cbd5e1" /><Tooltip contentStyle={{ background: "#020617", border: "1px solid #334155", borderRadius: "12px" }} /><Line type="monotone" dataKey="distance" stroke="#34d399" strokeWidth={3} dot /></LineChart></ResponsiveContainer></div></section><div className="mt-4 grid gap-4 lg:grid-cols-2">{[1, 2, 3, 4].map((week) => { const summary = summarizeWeek(week, data.sessions, data.walks, data.weights, data.waists, data.habits, data.reviews); return <section className={card} key={week}><h2 className="text-xl font-bold">Week {week}</h2><p className="mt-2 text-sm text-slate-300">Strength {summary.strength}/3 · walks {summary.walks} · distance {summary.distance.toFixed(1)} km · tier {summary.tier.tier}.</p></section>; })}</div></Page>; }
 
+function Achievements() {
+  const data = useData();
+  const earned = new Map(data.achievements.map((record) => [record.achievementId, record]));
+  return <Page title="Achievements" subtitle="Badges earned during Month 1. Celebrations trigger once when a new achievement is earned."><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{ACHIEVEMENTS.map(([id, name, description]) => { const record = earned.get(id); return <section key={id} className={`${card} ${record ? "border-emerald-300/40 bg-emerald-400/10" : "opacity-70"}`}><div className="flex items-start gap-3"><span className={`rounded-2xl p-3 ${record ? "bg-emerald-400 text-slate-950" : "bg-white/10 text-slate-300"}`}><Trophy size={24} /></span><div><h2 className="text-lg font-black">{name}</h2><p className="mt-1 text-sm text-slate-300">{description}</p><p className="mt-3 text-xs font-bold uppercase tracking-wide text-slate-400">{record ? `Earned ${format(new Date(record.earnedAt), "d MMM yyyy")}` : "Locked"}</p></div></div></section>; })}</div></Page>;
+}
+
 function Backup() {
   const [preview, setPreview] = useState<string>("");
   const data = useData();
@@ -388,15 +402,45 @@ function Backup() {
 function FormInput({ label, value, set, type = "text", placeholder }: { label: string; value: string | number; set: (value: string) => void; type?: string; placeholder?: string }) { return <label className="text-sm text-slate-300">{label}<input className={`${input} mt-1`} type={type} value={value} placeholder={placeholder} onChange={(event) => set(event.target.value)} /></label>; }
 function RecordList<T extends { id: string }>({ records, render }: { records: T[]; render: (record: T) => ReactNode }) { return <section className={`${card} mt-4`}><h2 className="text-xl font-bold">Records</h2><div className="mt-3 space-y-3">{records.map((record) => <div key={record.id} className="rounded-2xl bg-white/5 p-3">{render(record)}</div>)}</div></section>; }
 
-function useAchievementSync(data: AppData) {
+function AchievementCelebrations() {
+  const data = useData();
+  const [popup, setPopup] = useState<string | undefined>();
+  useAchievementSync(data, setPopup);
+  if (!popup) return null;
+  return <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur" role="status" aria-live="assertive"><div className="max-w-sm rounded-[2rem] border border-emerald-300/50 bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-950 p-6 text-center shadow-2xl shadow-emerald-950/50"><div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-emerald-400 text-slate-950"><Trophy size={42} /></div><p className="mt-5 text-sm font-bold uppercase tracking-[0.25em] text-emerald-200">Achievement unlocked</p><h2 className="mt-2 text-3xl font-black">{achievementName(popup)}</h2><p className="mt-2 text-slate-300">{achievementDescription(popup)}</p><div className="mt-5 flex justify-center gap-2"><Link className={button} to="/achievements" onClick={() => setPopup(undefined)}>View badges</Link><button className={ghost} onClick={() => setPopup(undefined)}>Close</button></div></div></div>;
+}
+
+function useAchievementSync(data: AppData, showPopup: (achievementId: string) => void) {
+  const announced = useRef<Set<string>>(new Set());
   useEffect(() => {
     const eligible = eligibleAchievements({ ...data, today: todayLocalDate() });
     const fresh = newAchievementIds(eligible, data.achievements);
     if (!fresh.length) return;
+    const newFresh = fresh.filter((id) => !announced.current.has(id));
+    if (!newFresh.length) return;
+    newFresh.forEach((id) => announced.current.add(id));
     const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    db.achievements.bulkAdd(fresh.map((achievementId) => ({ id: `achievement-${achievementId}`, achievementId, earnedAt: nowIso(), createdAt: nowIso(), updatedAt: nowIso() }))).catch(() => undefined);
-    if (!reduced && fresh.some((id) => ["strong-week", "stretch-week"].includes(id))) confetti({ particleCount: fresh.includes("stretch-week") ? 90 : 35, spread: 55, origin: { y: 0.8 } });
-  }, [data]);
+    db.achievements.bulkAdd(newFresh.map((achievementId) => ({ id: `achievement-${achievementId}`, achievementId, earnedAt: nowIso(), createdAt: nowIso(), updatedAt: nowIso() }))).catch(() => undefined);
+    queueMicrotask(() => showPopup(newFresh[0]));
+    playAchievementSound();
+    if (!reduced) confetti({ particleCount: newFresh.includes("stretch-week") ? 120 : 80, spread: 70, origin: { y: 0.75 } });
+  }, [data, showPopup]);
+}
+
+function playAchievementSound() {
+  const AudioContextClass = window.AudioContext ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioContextClass) return;
+  const context = new AudioContextClass();
+  const gain = context.createGain();
+  gain.gain.value = 0.06;
+  gain.connect(context.destination);
+  [523, 659, 784].forEach((frequency, index) => {
+    const oscillator = context.createOscillator();
+    oscillator.frequency.value = frequency;
+    oscillator.connect(gain);
+    oscillator.start(context.currentTime + index * 0.09);
+    oscillator.stop(context.currentTime + index * 0.09 + 0.12);
+  });
 }
 
 export default App;
